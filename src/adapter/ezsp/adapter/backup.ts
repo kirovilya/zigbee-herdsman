@@ -4,6 +4,8 @@ import {Driver} from '../driver';
 import * as Models from "../../../models";
 import {EmberKeyType, EmberKeyStruct, EmberNetworkParameters} from '../driver/types';
 import {channelsMask2list} from '../driver/utils';
+import {fs} from "mz";
+import {BackupUtils} from "../../../utils";
 
 
 export class EZSPAdapterBackup {
@@ -50,5 +52,32 @@ export class EZSPAdapterBackup {
             coordinatorIeeeAddress: ieee,
             devices: []
         };
+    }
+
+    /**
+     * Loads currently stored backup and returns it in internal backup model.
+     */
+    public async getStoredBackup(): Promise<Models.Backup> {
+        try {
+            await fs.access(this.defaultPath);
+        } catch (error) {
+            return null;
+        }
+        let data;
+        try {
+            data = JSON.parse((await fs.readFile(this.defaultPath)).toString());
+        } catch (error) {
+            throw new Error('Coordinator backup is corrupted');
+        }
+        if (data.metadata?.format === "zigpy/open-coordinator-backup" && data.metadata?.version) {
+            if (data.metadata?.version !== 1) {
+                throw new Error(`Unsupported open coordinator backup version (version=${data.metadata?.version})`);
+            }
+            return BackupUtils.fromUnifiedBackup(data as Models.UnifiedBackupStorage);
+        } else if (data.adapterType === "ezsp") {
+            return BackupUtils.fromLegacyBackup(data as Models.LegacyBackupStorage);
+        } else {
+            throw new Error("Unknown backup format");
+        }
     }
 }

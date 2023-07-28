@@ -17,7 +17,6 @@ import {Waitress, Wait, RealpathSync} from '../../../utils';
 import * as Models from "../../../models";
 import SerialPortUtils from '../../serialPortUtils';
 import SocketPortUtils from '../../socketPortUtils';
-import {EZSPAdapterBackup} from './backup';
 
 
 const autoDetectDefinitions = [
@@ -39,7 +38,6 @@ class EZSPAdapter extends Adapter {
     private port: SerialPortOptions;
     private waitress: Waitress<Events.ZclDataPayload, WaitressMatcher>;
     private interpanLock: boolean;
-    private backupMan: EZSPAdapterBackup;
 
     public constructor(networkOptions: NetworkOptions,
                        serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions) {
@@ -49,11 +47,10 @@ class EZSPAdapter extends Adapter {
             this.waitressValidator, this.waitressTimeoutFormatter
         );
         this.interpanLock = false;
-        this.driver = new Driver();
+        this.driver = new Driver(backupPath);
         this.driver.on('deviceJoined', this.handleDeviceJoin.bind(this));
         this.driver.on('deviceLeft', this.handleDeviceLeft.bind(this));
         this.driver.on('incomingMessage', this.processMessage.bind(this));
-        this.backupMan = new EZSPAdapterBackup(this.driver, backupPath);
     }
 
     private async processMessage(frame: EmberIncomingMessage) {
@@ -606,7 +603,7 @@ class EZSPAdapter extends Adapter {
     }
 
     public async backup(): Promise<Models.Backup> {
-        return this.backupMan.createBackup();
+        return this.driver.backupMan.createBackup();
     }
 
     public async restoreChannelInterPAN(): Promise<void> {

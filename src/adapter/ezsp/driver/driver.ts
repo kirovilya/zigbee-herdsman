@@ -23,6 +23,7 @@ import {Queue, Waitress, Wait} from '../../../utils';
 import Debug from "debug";
 import equals from 'fast-deep-equal/es6';
 import {ParamsDesc} from './commands';
+import {EZSPAdapterBackup} from '../adapter/backup';
 
 const debug = {
     error: Debug('zigbee-herdsman:adapter:ezsp:erro'),
@@ -92,9 +93,11 @@ export class Driver extends EventEmitter {
     private port: string;
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     private serialOpt: Record<string, any>;
+    public backupMan: EZSPAdapterBackup;
 
-    constructor() {
+    constructor(backupPath: string) {
         super();
+        this.backupMan = new EZSPAdapterBackup(this, backupPath);
         this.queue = new Queue(8);
         this.waitress = new Waitress<EmberFrame, EmberWaitressMatcher>(
             this.waitressValidator, this.waitressTimeoutFormatter);
@@ -189,15 +192,30 @@ export class Driver extends EventEmitter {
         };
 
         if (await this.needsToBeInitialised(nwkOpt)) {
-            const res = await this.ezsp.execCommand('networkState');
-            debug.log(`Network state ${res.status}`);
-            if (res.status == EmberNetworkStatus.JOINED_NETWORK) {
-                debug.log(`Leaving current network and forming new network`);
-                const st = await this.ezsp.leaveNetwork();
-                console.assert(st == EmberStatus.NETWORK_DOWN, `leaveNetwork returned unexpected status: ${st}`);
+            // нужно проверить, что указано бэкапе.
+            if (await this.needsToBeRestore(nwkOpt)) {
+                // restore
+                const res = await this.ezsp.execCommand('networkState');
+                debug.log(`Network state ${res.status}`);
+                if (res.status == EmberNetworkStatus.JOINED_NETWORK) {
+                    debug.log(`Leaving current network and forming new network`);
+                    const st = await this.ezsp.leaveNetwork();
+                    console.assert(st == EmberStatus.NETWORK_DOWN, `leaveNetwork returned unexpected status: ${st}`);
+                }
+                await this.form_network();
+                result = 'restored';
+            } else {
+                // reset
+                const res = await this.ezsp.execCommand('networkState');
+                debug.log(`Network state ${res.status}`);
+                if (res.status == EmberNetworkStatus.JOINED_NETWORK) {
+                    debug.log(`Leaving current network and forming new network`);
+                    const st = await this.ezsp.leaveNetwork();
+                    console.assert(st == EmberStatus.NETWORK_DOWN, `leaveNetwork returned unexpected status: ${st}`);
+                }
+                await this.form_network();
+                result = 'reset';
             }
-            await this.form_network();
-            result = 'reset';
         }
         const state = (await this.ezsp.execCommand('networkState')).status;
         debug.log(`Network state ${state}`);
@@ -230,6 +248,26 @@ export class Driver extends EventEmitter {
     }
 
     private async needsToBeInitialised(options: TsType.NetworkOptions): Promise<boolean> {
+        let valid = true;
+        valid = valid && (await this.ezsp.networkInit());
+        const netParams = await this.ezsp.execCommand('getNetworkParameters');
+        const networkParams = netParams.parameters;
+        debug.log("Current Node type: %s, Network parameters: %s", netParams.nodeType, networkParams);
+        valid = valid && (netParams.status == EmberStatus.SUCCESS);
+        valid = valid && (netParams.nodeType == EmberNodeType.COORDINATOR);
+        valid = valid && (options.panID == networkParams.panId);
+        valid = valid && (options.channelList.includes(networkParams.radioChannel));
+        valid = valid && (equals(options.extendedPanID, networkParams.extendedPanId));
+        return !valid;
+    }
+
+    private async needsToBeRestore(options: TsType.NetworkOptions): Promise<boolean> {
+        // если бэкапа нет, значит настройки изменили и надо запускать новую сеть.
+        // если в бэкапе настройки совпадают с чипом, значит настройки изменили и надо предупредить, чтобы сперва удалили файл бэкапа.
+        // если в бэкапе настройки совпадают с конфигом, значит в чипе старая сеть и хотят восстановить из бэкапа.
+        const backup = await this.backupMan.getStoredBackup();
+        if (!backup) return false;
+        
         let valid = true;
         valid = valid && (await this.ezsp.networkInit());
         const netParams = await this.ezsp.execCommand('getNetworkParameters');
