@@ -73,11 +73,47 @@ export class EZSPAdapterBackup {
             if (data.metadata?.version !== 1) {
                 throw new Error(`Unsupported open coordinator backup version (version=${data.metadata?.version})`);
             }
-            return BackupUtils.fromUnifiedBackup(data as Models.UnifiedBackupStorage);
-        } else if (data.adapterType === "ezsp") {
-            return BackupUtils.fromLegacyBackup(data as Models.LegacyBackupStorage);
+            if (!data.metadata.internal?.ezspVersion) {
+                throw new Error(`This open coordinator backup format not for EZSP adapter`);
+            }
+            return this.fromUnifiedBackup(data as Models.UnifiedBackupStorage);
         } else {
             throw new Error("Unknown backup format");
         }
+    }
+    private fromUnifiedBackup(backup: Models.UnifiedBackupStorage): Models.Backup {
+        const hashed_tclk = backup.stack_specific?.ezsp?.hashed_tclk || null;
+        /* istanbul ignore next */
+        return {
+            networkOptions: {
+                panId: Buffer.from(backup.pan_id, "hex").readUInt16BE(),
+                extendedPanId: Buffer.from(backup.extended_pan_id, "hex"),
+                channelList: backup.channel_mask,
+                networkKey: Buffer.from(backup.network_key.key, "hex"),
+                networkKeyDistribute: false
+            },
+            logicalChannel: backup.channel,
+            networkKeyInfo: {
+                sequenceNumber: backup.network_key.sequence_number,
+                frameCounter: backup.network_key.frame_counter
+            },
+            coordinatorIeeeAddress: backup.coordinator_ieee ? Buffer.from(backup.coordinator_ieee, "hex") : null,
+            securityLevel: backup.security_level || null,
+            networkUpdateId: backup.nwk_update_id || null,
+            devices: backup.devices.map(device => ({
+                networkAddress: device.nwk_address ? Buffer.from(device.nwk_address, "hex").readUInt16BE() : Buffer.from("fffe", "hex").readUInt16BE(),
+                ieeeAddress: Buffer.from(device.ieee_address, "hex"),
+                isDirectChild: typeof device.is_child === "boolean" ? device.is_child : true,
+                linkKey: !device.link_key ? undefined : {
+                    key: Buffer.from(device.link_key.key, "hex"),
+                    rxCounter: device.link_key.rx_counter,
+                    txCounter: device.link_key.tx_counter
+                }
+            })),
+            ezsp: {
+                version: backup.metadata.internal?.ezspVersion || undefined,
+                hashed_tclk: hashed_tclk ? Buffer.from(hashed_tclk, "hex") : undefined,
+            }
+        };
     }
 }

@@ -192,7 +192,7 @@ export class Driver extends EventEmitter {
         };
 
         if (await this.needsToBeInitialised(nwkOpt)) {
-            // нужно проверить, что указано бэкапе.
+            // need to check the backup
             if (await this.needsToBeRestore(nwkOpt)) {
                 // restore
                 const res = await this.ezsp.execCommand('networkState');
@@ -262,9 +262,7 @@ export class Driver extends EventEmitter {
     }
 
     private async needsToBeRestore(options: TsType.NetworkOptions): Promise<boolean> {
-        // если бэкапа нет, значит настройки изменили и надо запускать новую сеть.
-        // если в бэкапе настройки совпадают с чипом, значит настройки изменили и надо предупредить, чтобы сперва удалили файл бэкапа.
-        // если в бэкапе настройки совпадают с конфигом, значит в чипе старая сеть и хотят восстановить из бэкапа.
+        // if no backup and the settings have been changed, then need to start a new network
         const backup = await this.backupMan.getStoredBackup();
         if (!backup) return false;
         
@@ -273,11 +271,28 @@ export class Driver extends EventEmitter {
         const netParams = await this.ezsp.execCommand('getNetworkParameters');
         const networkParams = netParams.parameters;
         debug.log("Current Node type: %s, Network parameters: %s", netParams.nodeType, networkParams);
-        valid = valid && (netParams.status == EmberStatus.SUCCESS);
-        valid = valid && (netParams.nodeType == EmberNodeType.COORDINATOR);
-        valid = valid && (options.panID == networkParams.panId);
-        valid = valid && (options.channelList.includes(networkParams.radioChannel));
-        valid = valid && (equals(options.extendedPanID, networkParams.extendedPanId));
+        debug.log("Backuped network parameters: %s", backup.networkOptions);
+
+        // if the settings in the backup match the chip, then need to warn to delete the backup file first
+        valid = valid && (networkParams.panId == backup.networkOptions.panId);
+        valid = valid && (networkParams.radioChannel == backup.logicalChannel);
+        valid = valid && (equals(networkParams.extendedPanId, backup.networkOptions.extendedPanId));
+        if (valid) {
+            debug.error(`Configuration is not consistent with adapter backup!`);
+            debug.error(`- PAN ID: configured=${networkParams.panId}, backup=${backup.networkOptions.panId}`);
+            debug.error(`- Extended PAN ID: configured=${networkParams.extendedPanId.toString("hex")}, backup=${networkParams.extendedPanId.toString("hex")}`);
+            debug.error(`- Channel List: configured=${networkParams.radioChannel}, backup=${backup.logicalChannel}`);
+            debug.error(`Please update configuration to prevent further issues.`);
+            debug.error(`If you wish to re-commission your network, please remove coordinator backup.`);
+            debug.error(`Re-commissioning your network will require re-pairing of all devices!`);
+            throw new Error("startup failed - configuration-adapter mismatch - see logs above for more information");
+        }
+        valid = true;
+        // if the settings in the backup match the config, then the old network is in the chip and needs to be restored
+        valid = valid && (options.panID == backup.networkOptions.panId);
+        valid = valid && (options.channelList.includes(backup.logicalChannel));
+        valid = valid && (equals(options.extendedPanID, backup.networkOptions.extendedPanId));
+        valid = valid && (equals(options.networkKey, backup.networkOptions.networkKey));
         return !valid;
     }
 
