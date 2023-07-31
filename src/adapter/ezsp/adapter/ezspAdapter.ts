@@ -17,6 +17,7 @@ import {Waitress, Wait, RealpathSync} from '../../../utils';
 import * as Models from "../../../models";
 import SerialPortUtils from '../../serialPortUtils';
 import SocketPortUtils from '../../socketPortUtils';
+import {LoggerStub} from "../../../controller/logger-stub";
 
 
 const autoDetectDefinitions = [
@@ -40,14 +41,14 @@ class EZSPAdapter extends Adapter {
     private interpanLock: boolean;
 
     public constructor(networkOptions: NetworkOptions,
-                       serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions) {
-        super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+                       serialPortOptions: SerialPortOptions, backupPath: string, adapterOptions: AdapterOptions, logger?: LoggerStub) {
+        super(networkOptions, serialPortOptions, backupPath, adapterOptions, logger);
         this.port = serialPortOptions;
         this.waitress = new Waitress<Events.ZclDataPayload, WaitressMatcher>(
             this.waitressValidator, this.waitressTimeoutFormatter
         );
         this.interpanLock = false;
-        this.driver = new Driver(backupPath);
+        this.driver = new Driver(backupPath, logger);
         this.driver.on('deviceJoined', this.handleDeviceJoin.bind(this));
         this.driver.on('deviceLeft', this.handleDeviceLeft.bind(this));
         this.driver.on('incomingMessage', this.processMessage.bind(this));

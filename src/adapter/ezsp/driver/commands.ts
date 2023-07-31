@@ -2372,6 +2372,20 @@ export const ZDOREQUESTS: {[key: string]: EZSPFrameDesc} = {
             status: EmberStatus
         },
     },
+    mgmtNWKUpdateReq: {
+        ID: 0x0038,
+        request: {
+            transId: uint8_t,
+            scanChannels: uint32_t,
+            scanDuration: uint8_t,
+            //scanCount: uint16_t,
+            nwkUpdateId: uint8_t,
+            nwkManagerAddr: EmberNodeId,
+        },
+        response: {
+            status: EmberStatus
+        },
+    },
 };
 
 export const ZDORESPONSES: {[key: string]: EZSPZDOResponseFrame} = {
@@ -2449,6 +2463,17 @@ export const ZDORESPONSES: {[key: string]: EZSPZDOResponseFrame} = {
             transId: uint8_t,
             status: EmberStatus
         }
+    },
+    mgmtNWKUpdateRsp: {
+        ID: 0x8038,
+        params: {
+            transId: uint8_t,
+            status: EmberStatus,
+            scanedChannels: uint32_t,
+            totalTransmissions: uint16_t,
+            transmissionFailures: uint16_t,
+            energyValues: LVBytes,
+        },
     },
 };
 

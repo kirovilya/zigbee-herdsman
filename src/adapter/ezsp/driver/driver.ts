@@ -24,6 +24,7 @@ import Debug from "debug";
 import equals from 'fast-deep-equal/es6';
 import {ParamsDesc} from './commands';
 import {EZSPAdapterBackup} from '../adapter/backup';
+import {LoggerStub} from "../../../controller/logger-stub";
 
 const debug = {
     error: Debug('zigbee-herdsman:adapter:ezsp:erro'),
@@ -94,9 +95,11 @@ export class Driver extends EventEmitter {
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
     private serialOpt: Record<string, any>;
     public backupMan: EZSPAdapterBackup;
+    private logger: LoggerStub;
 
-    constructor(backupPath: string) {
+    constructor(backupPath: string, logger: LoggerStub) {
         super();
+        this.logger = logger;
         this.backupMan = new EZSPAdapterBackup(this, backupPath);
         this.queue = new Queue(8);
         this.waitress = new Waitress<EmberFrame, EmberWaitressMatcher>(
@@ -202,7 +205,7 @@ export class Driver extends EventEmitter {
                     const st = await this.ezsp.leaveNetwork();
                     console.assert(st == EmberStatus.NETWORK_DOWN, `leaveNetwork returned unexpected status: ${st}`);
                 }
-                await this.form_network();
+                await this.restore_network();
                 result = 'restored';
             } else {
                 // reset
@@ -267,33 +270,90 @@ export class Driver extends EventEmitter {
         if (!backup) return false;
         
         let valid = true;
-        valid = valid && (await this.ezsp.networkInit());
+        //valid = valid && (await this.ezsp.networkInit());
         const netParams = await this.ezsp.execCommand('getNetworkParameters');
         const networkParams = netParams.parameters;
         debug.log("Current Node type: %s, Network parameters: %s", netParams.nodeType, networkParams);
         debug.log("Backuped network parameters: %s", backup.networkOptions);
+        const networkKey = await this.ezsp.execCommand('getKey', {keyType: EmberKeyType.CURRENT_NETWORK_KEY});
 
         // if the settings in the backup match the chip, then need to warn to delete the backup file first
         valid = valid && (networkParams.panId == backup.networkOptions.panId);
         valid = valid && (networkParams.radioChannel == backup.logicalChannel);
-        valid = valid && (equals(networkParams.extendedPanId, backup.networkOptions.extendedPanId));
+        valid = valid && (Buffer.from(networkParams.extendedPanId).equals(backup.networkOptions.extendedPanId));
+        valid = valid && (Buffer.from(networkKey.keyStruct.key.contents).equals(backup.networkOptions.networkKey));
         if (valid) {
-            debug.error(`Configuration is not consistent with adapter backup!`);
-            debug.error(`- PAN ID: configured=${networkParams.panId}, backup=${backup.networkOptions.panId}`);
-            debug.error(`- Extended PAN ID: configured=${networkParams.extendedPanId.toString("hex")}, backup=${networkParams.extendedPanId.toString("hex")}`);
-            debug.error(`- Channel List: configured=${networkParams.radioChannel}, backup=${backup.logicalChannel}`);
-            debug.error(`Please update configuration to prevent further issues.`);
-            debug.error(`If you wish to re-commission your network, please remove coordinator backup.`);
-            debug.error(`Re-commissioning your network will require re-pairing of all devices!`);
+            this.logger.error(`Configuration is not consistent with adapter backup!`);
+            this.logger.error(`- PAN ID: configured=${options.panID}, adapter=${networkParams.panId}, backup=${backup.networkOptions.panId}`);
+            this.logger.error(`- Extended PAN ID: configured=${Buffer.from(options.extendedPanID).toString("hex")}, adapter=${Buffer.from(networkParams.extendedPanId).toString("hex")}, backup=${Buffer.from(networkParams.extendedPanId).toString("hex")}`);
+            this.logger.error(`- Channel: configured=${options.channelList}, adapter=${networkParams.radioChannel}, backup=${backup.logicalChannel}`);
+            this.logger.error(`- Network key: configured=${Buffer.from(options.networkKey).toString("hex")}, adapter=${Buffer.from(networkKey.keyStruct.key.contents).toString("hex")}, backup=${backup.networkOptions.networkKey.toString("hex")}`);
+            this.logger.error(`Please update configuration to prevent further issues.`);
+            this.logger.error(`If you wish to re-commission your network, please remove coordinator backup.`);
+            this.logger.error(`Re-commissioning your network will require re-pairing of all devices!`);
             throw new Error("startup failed - configuration-adapter mismatch - see logs above for more information");
         }
         valid = true;
         // if the settings in the backup match the config, then the old network is in the chip and needs to be restored
         valid = valid && (options.panID == backup.networkOptions.panId);
         valid = valid && (options.channelList.includes(backup.logicalChannel));
-        valid = valid && (equals(options.extendedPanID, backup.networkOptions.extendedPanId));
-        valid = valid && (equals(options.networkKey, backup.networkOptions.networkKey));
-        return !valid;
+        valid = valid && (Buffer.from(options.extendedPanID).equals(backup.networkOptions.extendedPanId));
+        valid = valid && (Buffer.from(options.networkKey).equals(backup.networkOptions.networkKey));
+        return valid;
+    }
+
+    private async restore_network(): Promise<void> {
+        const backup = await this.backupMan.getStoredBackup();
+        if (!backup) return;
+
+        const keySec = backup.networkKeyInfo.sequenceNumber;
+        let status;
+        const initial_security_state: EmberInitialSecurityState = ember_security(Buffer.from(this.nwkOpt.networkKey), keySec);
+        status = await this.ezsp.setInitialSecurityState(initial_security_state);
+
+        status = (await this.ezsp.execCommand('clearKeyTable')).status;
+        console.assert(status == EmberStatus.SUCCESS,
+            `Command clearKeyTable returned unexpected state: ${status}`);
+        await this.ezsp.execCommand('clearTransientLinkKeys');
+
+        // _restore_keys
+        
+        await this.ezsp.setValue(EzspValueId.VALUE_NWK_FRAME_COUNTER, backup.networkKeyInfo.frameCounter); 
+        // await this.ezsp.setValue(EzspValueId.VALUE_APS_FRAME_COUNTER, );
+
+        const parameters: EmberNetworkParameters = new EmberNetworkParameters();
+        parameters.panId = this.nwkOpt.panID;
+        parameters.extendedPanId = this.nwkOpt.extendedPanID;
+        parameters.radioTxPower = 5;
+        parameters.radioChannel = this.nwkOpt.channelList[0];
+        parameters.joinMethod = EmberJoinMethod.USE_MAC_ASSOCIATION;
+        parameters.nwkManagerId = 0;
+        parameters.nwkUpdateId = 0;
+        parameters.channels = 0x07FFF800; // all channels
+
+        await this.ezsp.formNetwork(parameters);
+
+        // _update_nwk_id
+        const nwkId = backup.networkUpdateId;
+        const frame = this.makeApsFrame(EmberZDOCmd.Mgmt_NWK_Update_req, false);
+        frame.options = EmberApsOption.APS_OPTION_NONE;
+        frame.sequence = 0xDE;
+
+        const params = {
+            scanChannels: 0x07FFF800, // all channels
+            scanDuration: 0xFF, // channelChangeReq=0xFE, channelMaskManagerAddrChangeReq=0xFF,
+            nwkUpdateId: nwkId,
+            nwkManagerAddr: 0x0000,
+        };
+
+        const payload = this.makeZDOframe(EmberZDOCmd.Mgmt_NWK_Update_req, {transId: frame.sequence, ...params});
+        const res = await this.brequest(0xFFFF, frame, payload);
+        if (!res) {
+            debug.error(`Mgmt_NWK_Update_req error`);
+            throw Error('Mgmt_NWK_Update_req error');
+        }
+        await Wait(1000);
+        await this.ezsp.setValue(EzspValueId.VALUE_STACK_TOKEN_WRITING, 1);
     }
 
     private async form_network(): Promise<void> {
@@ -305,7 +365,7 @@ export class Driver extends EventEmitter {
 
         const panID = this.nwkOpt.panID;
         const extendedPanID = this.nwkOpt.extendedPanID;
-        const initial_security_state: EmberInitialSecurityState = ember_security(this.nwkOpt);
+        const initial_security_state: EmberInitialSecurityState = ember_security(Buffer.from(this.nwkOpt.networkKey));
         status = await this.ezsp.setInitialSecurityState(initial_security_state);
         const parameters: EmberNetworkParameters = new EmberNetworkParameters();
         parameters.panId = panID;
@@ -318,6 +378,7 @@ export class Driver extends EventEmitter {
         parameters.channels = 0x07FFF800; // all channels
 
         await this.ezsp.formNetwork(parameters);
+        await Wait(2000);
         await this.ezsp.setValue(EzspValueId.VALUE_STACK_TOKEN_WRITING, 1);
     }
 
