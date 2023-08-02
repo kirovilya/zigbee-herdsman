@@ -2,7 +2,7 @@
 import Debug from "debug";
 import {Driver} from '../driver';
 import * as Models from "../../../models";
-import {EmberKeyType, EmberKeyStruct, EmberNetworkParameters} from '../driver/types';
+import {EmberKeyType, EmberKeyStruct, EmberNetworkParameters, EmberEUI64, EzspStatus} from '../driver/types';
 import {channelsMask2list} from '../driver/utils';
 import {fs} from "mz";
 import {BackupUtils} from "../../../utils";
@@ -28,6 +28,29 @@ export class EZSPAdapterBackup {
         const netResult = await this.driver.ezsp.execCommand('getKey', {keyType: EmberKeyType.CURRENT_NETWORK_KEY});
         const networkKey: EmberKeyStruct = netResult.keyStruct;
         const ieee = (await this.driver.ezsp.execCommand('getEui64')).eui64;
+        const childCount = (await this.driver.ezsp.execCommand('getParentChildParameters')).childCount;
+        const children = [];
+        for (let i = 0; i < childCount; i++) {
+            const child = (await this.driver.ezsp.execCommand('getChildData', {index: i}));
+            if (child.status == EzspStatus.SUCCESS) {
+                children.push({
+                    networkAddress: child.nodeId,
+                    ieeeAddress: child.eui64,
+                    isDirectChild: true,
+                });
+            }
+        }
+        const neighborCount = (await this.driver.ezsp.execCommand('neighborCount')).value;
+        for (let i = 0; i < neighborCount; i++) {
+            const neighbor = (await this.driver.ezsp.execCommand('getNeighbor', {index: i}));
+            if (neighbor.status == EzspStatus.SUCCESS) {
+                children.push({
+                    networkAddress: neighbor.value.shortId,
+                    ieeeAddress: neighbor.value.longId,
+                    isDirectChild: false,
+                });
+            }
+        }
         /* return backup structure */
         /* istanbul ignore next */
         return {
@@ -50,7 +73,7 @@ export class EZSPAdapterBackup {
             securityLevel: 5,
             networkUpdateId: networkParams.nwkUpdateId,
             coordinatorIeeeAddress: ieee,
-            devices: []
+            devices: children
         };
     }
 

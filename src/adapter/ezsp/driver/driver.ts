@@ -307,8 +307,9 @@ export class Driver extends EventEmitter {
         if (!backup) return;
 
         const keySec = backup.networkKeyInfo.sequenceNumber;
+        const hashedTclk = backup.ezsp.hashed_tclk;
         let status;
-        const initial_security_state: EmberInitialSecurityState = ember_security(Buffer.from(this.nwkOpt.networkKey), keySec);
+        const initial_security_state: EmberInitialSecurityState = ember_security(Buffer.from(this.nwkOpt.networkKey), keySec, hashedTclk);
         status = await this.ezsp.setInitialSecurityState(initial_security_state);
 
         status = (await this.ezsp.execCommand('clearKeyTable')).status;
@@ -354,6 +355,20 @@ export class Driver extends EventEmitter {
         }
         await Wait(1000);
         await this.ezsp.setValue(EzspValueId.VALUE_STACK_TOKEN_WRITING, 1);
+
+        // restore devices
+        let i = 0;
+        backup.devices.forEach(async (device) => {
+            const status = await this.ezsp.execCommand('setChildData', {
+                index: i++,
+                eui64: device.ieeeAddress,
+                nodeType: (device.isDirectChild) ? EmberNodeType.END_DEVICE : EmberNodeType.ROUTER,
+                nodeId: device.networkAddress,
+                phy: 0,
+                power: 0,
+                timeout: 0,
+            });
+        });
     }
 
     private async form_network(): Promise<void> {

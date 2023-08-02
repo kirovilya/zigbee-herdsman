@@ -627,9 +627,27 @@ export const FRAMES: {[key: string]: EZSPFrameDesc} = {
         },
         response: {
             status: EmberStatus,
-            nodeId: EmberNodeId,
             eui64: EmberEUI64,
-            nodeType: EmberNodeType
+            nodeType: EmberNodeType,
+            nodeId: EmberNodeId,
+            phy: uint8_t,
+            power: uint8_t,
+            timeout: uint8_t,
+        },
+    },
+    setChildData: {
+        ID: 0x00AC, // 172
+        request: {
+            index: uint8_t,
+            eui64: EmberEUI64,
+            nodeType: EmberNodeType,
+            nodeId: EmberNodeId,
+            phy: uint8_t,
+            power: uint8_t,
+            timeout: uint8_t,
+        },
+        response: {
+            status: EmberStatus,
         },
     },
     getNeighbor: {
