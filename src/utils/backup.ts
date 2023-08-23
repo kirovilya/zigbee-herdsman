@@ -41,7 +41,11 @@ export const toUnifiedBackup = async (backup: Models.Backup): Promise<Models.Uni
             } : undefined,
             ...(backup.ezsp) ? {
                 ezsp: {
-                    hashed_tclk: backup.ezsp?.hashed_tclk?.toString("hex") || undefined
+                    link_key: {
+                        key: backup.ezsp?.linkKey?.key.toString("hex"),
+                        frame_counter: backup.ezsp?.linkKey?.frameCounter,
+                        sequence_number: backup.ezsp?.linkKey?.sequenceNumber,
+                    }
                 }
             } : undefined
         },

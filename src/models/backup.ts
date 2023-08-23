@@ -31,7 +31,11 @@ export interface Backup {
         trustCenterLinkKeySeed?: Buffer;
     };
     ezsp?: {
-        version?: number;
-        hashed_tclk?: Buffer;
+        version: number;
+        linkKey: {
+            key: Buffer;
+            frameCounter: number;
+            sequenceNumber: number;
+        };
     };
 }

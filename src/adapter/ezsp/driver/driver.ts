@@ -303,72 +303,7 @@ export class Driver extends EventEmitter {
     }
 
     private async restore_network(): Promise<void> {
-        const backup = await this.backupMan.getStoredBackup();
-        if (!backup) return;
-
-        const keySec = backup.networkKeyInfo.sequenceNumber;
-        const hashedTclk = backup.ezsp.hashed_tclk;
-        let status;
-        const initial_security_state: EmberInitialSecurityState = ember_security(Buffer.from(this.nwkOpt.networkKey), keySec, hashedTclk);
-        status = await this.ezsp.setInitialSecurityState(initial_security_state);
-
-        status = (await this.ezsp.execCommand('clearKeyTable')).status;
-        console.assert(status == EmberStatus.SUCCESS,
-            `Command clearKeyTable returned unexpected state: ${status}`);
-        await this.ezsp.execCommand('clearTransientLinkKeys');
-
-        // _restore_keys
-        
-        await this.ezsp.setValue(EzspValueId.VALUE_NWK_FRAME_COUNTER, backup.networkKeyInfo.frameCounter); 
-        // await this.ezsp.setValue(EzspValueId.VALUE_APS_FRAME_COUNTER, );
-
-        const parameters: EmberNetworkParameters = new EmberNetworkParameters();
-        parameters.panId = this.nwkOpt.panID;
-        parameters.extendedPanId = this.nwkOpt.extendedPanID;
-        parameters.radioTxPower = 5;
-        parameters.radioChannel = this.nwkOpt.channelList[0];
-        parameters.joinMethod = EmberJoinMethod.USE_MAC_ASSOCIATION;
-        parameters.nwkManagerId = 0;
-        parameters.nwkUpdateId = 0;
-        parameters.channels = 0x07FFF800; // all channels
-
-        await this.ezsp.formNetwork(parameters);
-
-        // _update_nwk_id
-        const nwkId = backup.networkUpdateId;
-        const frame = this.makeApsFrame(EmberZDOCmd.Mgmt_NWK_Update_req, false);
-        frame.options = EmberApsOption.APS_OPTION_NONE;
-        frame.sequence = 0xDE;
-
-        const params = {
-            scanChannels: 0x07FFF800, // all channels
-            scanDuration: 0xFF, // channelChangeReq=0xFE, channelMaskManagerAddrChangeReq=0xFF,
-            nwkUpdateId: nwkId,
-            nwkManagerAddr: 0x0000,
-        };
-
-        const payload = this.makeZDOframe(EmberZDOCmd.Mgmt_NWK_Update_req, {transId: frame.sequence, ...params});
-        const res = await this.brequest(0xFFFF, frame, payload);
-        if (!res) {
-            debug.error(`Mgmt_NWK_Update_req error`);
-            throw Error('Mgmt_NWK_Update_req error');
-        }
-        await Wait(1000);
-        await this.ezsp.setValue(EzspValueId.VALUE_STACK_TOKEN_WRITING, 1);
-
-        // restore devices
-        let i = 0;
-        backup.devices.forEach(async (device) => {
-            const status = await this.ezsp.execCommand('setChildData', {
-                index: i++,
-                eui64: device.ieeeAddress,
-                nodeType: (device.isDirectChild) ? EmberNodeType.END_DEVICE : EmberNodeType.ROUTER,
-                nodeId: device.networkAddress,
-                phy: 0,
-                power: 0,
-                timeout: 0,
-            });
-        });
+        await this.backupMan.restoreBackup();
     }
 
     private async form_network(): Promise<void> {
@@ -384,7 +319,7 @@ export class Driver extends EventEmitter {
         status = await this.ezsp.setInitialSecurityState(initial_security_state);
         const parameters: EmberNetworkParameters = new EmberNetworkParameters();
         parameters.panId = panID;
-        parameters.extendedPanId = extendedPanID;
+        parameters.extendedPanId = Buffer.from(extendedPanID);
         parameters.radioTxPower = 5;
         parameters.radioChannel = this.nwkOpt.channelList[0];
         parameters.joinMethod = EmberJoinMethod.USE_MAC_ASSOCIATION;

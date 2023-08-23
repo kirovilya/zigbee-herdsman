@@ -31,7 +31,7 @@ export class EzspStruct {
 }
 
 export class EmberNetworkParameters extends EzspStruct {
-    public extendedPanId: number[];
+    public extendedPanId: Buffer;
     public panId: number;
     public radioTxPower: number;
     public radioChannel: number;
@@ -366,6 +366,7 @@ export class EmberKeyStruct extends EzspStruct {
     public bitmask: number;
     public key: EmberKeyData;
     public outgoingFrameCounter: number;
+    public incomingFrameCounter: number;
     public sequenceNumber: number;
     public partnerEUI64: Buffer;
     // A structure containing a key and its associated data.

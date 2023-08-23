@@ -24,7 +24,11 @@ export interface UnifiedBackupStorage {
             tclk_seed?: string;
         };
         ezsp?: {
-            hashed_tclk?: string;
+            link_key: {
+                key: string;
+                frame_counter: number;
+                sequence_number: number;
+            };
         };
     };
     coordinator_ieee: string;
