@@ -313,10 +313,11 @@ class Endpoint extends Entity {
     /*
      * Zigbee functions
      */
-    private checkStatus(payload: [{status: Zcl.Status}] | {cmdId: number; statusCode: number}): void {
+    private checkStatus(payload: [{status: Zcl.Status}] | {cmdId: number; statusCode: number}, atLeastOne?: boolean): void {
         const codes = Array.isArray(payload) ? payload.map((i) => i.status) : [payload.statusCode];
+        const success = (atLeastOne) ? codes.find((c) => c == Zcl.Status.SUCCESS) : undefined;
         const invalid = codes.find((c) => c !== Zcl.Status.SUCCESS);
-        if (invalid) throw new Zcl.ZclStatusError(invalid);
+        if (invalid && success == undefined) throw new Zcl.ZclStatusError(invalid);
     }
 
     public async report(
@@ -466,7 +467,7 @@ class Endpoint extends Entity {
             const result = await this.sendRequest(frame, options);
 
             if (!options.disableResponse) {
-                this.checkStatus(result.frame.Payload);
+                this.checkStatus(result.frame.Payload, true);
                 return ZclFrameConverter.attributeKeyValue(result.frame, this.getDevice().manufacturerID);
             } else {
                 return null;

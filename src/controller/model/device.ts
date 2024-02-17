@@ -105,7 +105,7 @@ class Device extends Entity {
     set checkinInterval(checkinInterval: number) {
         this._checkinInterval = checkinInterval;
         this.resetPendingRequestTimeout();
-    };
+    }
     get pendingRequestTimeout(): number {return this._pendingRequestTimeout;}
     set pendingRequestTimeout(pendingRequestTimeout: number) {this._pendingRequestTimeout = pendingRequestTimeout;}
 
@@ -648,35 +648,32 @@ class Device extends Entity {
             // Read attributes, nice to have but not required for succesfull pairing as most of the attributes
             // are not mandatory in ZCL specification.
             if (endpoint.supportsInputCluster('genBasic')) {
+                const keys = Object.keys(Device.ReportablePropertiesMapping);
+                let result: KeyValue;
+                try {
+                    result = await endpoint.read('genBasic', keys, {sendPolicy: 'immediate'});
+                } catch (error) {
+                    // Reading attributes can fail for many reason, e.g. it could be that device rejoins
+                    // while joining like in:
+                    // https://github.com/Koenkk/zigbee-herdsman-converters/issues/2485.
+                    // The modelID and manufacturerName are crucial for device identification, so retry.
+                    debug.log(`Interview - first 'modelID' and 'manufacturerName' retrieval attempt failed, ` +
+                        `retrying after 10 seconds...`);
+                    await Wait(10000);
+                    try {
+                        result = await endpoint.read('genBasic', keys, {sendPolicy: 'immediate'});
+                    } catch (error) {
+                        throw error;
+                    }
+                }
                 for (const [key, item] of Object.entries(Device.ReportablePropertiesMapping)) {
-                    if (!this[item.key]) {
-                        try {
-                            let result: KeyValue;
-                            try {
-                                result = await endpoint.read('genBasic', [key], {sendPolicy: 'immediate'});
-                            } catch (error) {
-                                // Reading attributes can fail for many reason, e.g. it could be that device rejoins
-                                // while joining like in:
-                                // https://github.com/Koenkk/zigbee-herdsman-converters/issues/2485.
-                                // The modelID and manufacturerName are crucial for device identification, so retry.
-                                if (item.key === 'modelID' || item.key === 'manufacturerName') {
-                                    debug.log(`Interview - first ${item.key} retrieval attempt failed, ` +
-                                        `retrying after 10 seconds...`);
-                                    await Wait(10000);
-                                    result = await endpoint.read('genBasic', [key], {sendPolicy: 'immediate'});
-                                } else {
-                                    throw error;
-                                }
-                            }
-
-                            item.set(result[key], this);
-                            debug.log(`Interview - got '${item.key}' for device '${this.ieeeAddr}'`);
-                        } catch (error) {
-                            debug.log(
-                                `Interview - failed to read attribute '${item.key}' from ` +
-                                    `endpoint '${endpoint.ID}' (${error})`
-                            );
-                        }
+                    if (result[key] !== undefined) {
+                        item.set(result[key], this);
+                        debug.log(`Interview - got '${item.key}' for device '${this.ieeeAddr}'`);
+                    } else {
+                        debug.log(
+                            `Interview - failed to read attribute '${item.key}' from endpoint '${endpoint.ID}'`
+                        );
                     }
                 }
             }
