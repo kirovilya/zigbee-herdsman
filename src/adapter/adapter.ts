@@ -6,6 +6,7 @@ import * as Models from "../models";
 import Bonjour, {Service} from 'bonjour-service';
 import {logger} from '../utils/logger';
 import {BroadcastAddress} from '../zspec/enums';
+import {ZNSPAdapter} from './znsp/adapter';
 
 const NS = 'zh:adapter';
 
@@ -40,12 +41,13 @@ abstract class Adapter extends events.EventEmitter {
         const {ZiGateAdapter} = await import('./zigate/adapter');
         const {EZSPAdapter} = await import('./ezsp/adapter');
         const {EmberAdapter} = await import('./ember/adapter');
+        const {ZNSPAdapter} = await import('./znsp/adapter');
         type AdapterImplementation = (typeof ZStackAdapter | typeof DeconzAdapter | typeof ZiGateAdapter
-            | typeof EZSPAdapter | typeof EmberAdapter);
+            | typeof EZSPAdapter | typeof EmberAdapter | typeof ZNSPAdapter);
 
         let adapters: AdapterImplementation[];
         const adapterLookup = {zstack: ZStackAdapter, deconz: DeconzAdapter, zigate: ZiGateAdapter,
-            ezsp: EZSPAdapter, ember: EmberAdapter};
+            ezsp: EZSPAdapter, ember: EmberAdapter, znsp: ZNSPAdapter};
         if (serialPortOptions.adapter && serialPortOptions.adapter !== 'auto') {
             if (adapterLookup.hasOwnProperty(serialPortOptions.adapter)) {
                 adapters = [adapterLookup[serialPortOptions.adapter]];
