@@ -14,14 +14,18 @@ import {
     ZclPayload
 } from "../../events";
 import {BroadcastAddress} from '../../../zspec/enums';
+import {ZnspDriver} from '../driver';
 
 import {logger} from "../../../utils/logger";
 const NS = 'zh:znsp';
 
 export class ZNSPAdapter extends Adapter {
+    private readonly driver: ZnspDriver;
+
     constructor(networkOptions: TsType.NetworkOptions, serialPortOptions: TsType.SerialPortOptions, backupPath: string,
         adapterOptions: TsType.AdapterOptions) {
         super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+        this.driver = new ZnspDriver(serialPortOptions);
     }
 
     public static async isValidPath(path: string): Promise<boolean> {
@@ -35,10 +39,14 @@ export class ZNSPAdapter extends Adapter {
     public async start(): Promise<TsType.StartResult> {
         logger.info(`ZNSP Adapter starting`, NS);
 
+        this.driver.start();
+
         return 'resumed';
     }
 
     public async stop(): Promise<void> {
+        this.driver.stop();
+        
         logger.info(`ZNSP Adapter stopped`, NS);
     }
 
