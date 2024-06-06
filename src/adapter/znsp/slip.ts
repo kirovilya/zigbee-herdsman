@@ -5,18 +5,19 @@ import {SerialPort} from "../serialPort";
 import {SerialPortOptions} from "../tstype";
 import {Wait} from "../../utils";
 import {logger} from "../../utils/logger";
-import {UartWriter} from "./writer";
-import {UartReader} from "./reader";
+import {SlipWriter} from "./writer";
+import {SlipReader} from "./reader";
 import {ESCAPE, ESCEND, END, ESCESC} from "./consts";
+import {ZnspFrame, ZnspBuffalo} from "./frame";
 
 const NS = 'zh:znsp:uart';
 
-export class ZnspUart extends EventEmitter {
+export class ZnspSlip extends EventEmitter {
     private readonly portOptions: SerialPortOptions;
     private serialPort: SerialPort;
     private socketPort: Socket;
-    private writer: UartWriter;
-    private reader: UartReader;
+    private writer: SlipWriter;
+    private reader: SlipReader;
 
     private closing: boolean;
 
@@ -117,10 +118,10 @@ export class ZnspUart extends EventEmitter {
             logger.debug(`Opening serial port with ${JSON.stringify(serialOpts)}`, NS);
             this.serialPort = new SerialPort(serialOpts);
 
-            this.writer = new UartWriter();
+            this.writer = new SlipWriter();
             this.writer.pipe(this.socketPort);
 
-            this.reader = new UartReader();
+            this.reader = new SlipReader();
             this.socketPort.pipe(this.reader);
             this.reader.on('data', this.onFrame.bind(this));
             
@@ -143,10 +144,10 @@ export class ZnspUart extends EventEmitter {
             this.socketPort.setNoDelay(true);
             this.socketPort.setKeepAlive(true, 15000);
 
-            this.writer = new UartWriter();
+            this.writer = new SlipWriter();
             this.writer.pipe(this.socketPort);
 
-            this.reader = new UartReader();
+            this.reader = new SlipReader();
             this.socketPort.pipe(this.reader);
             this.reader.on('data', this.onFrame.bind(this));
 
@@ -234,13 +235,14 @@ export class ZnspUart extends EventEmitter {
 
     private onFrame(buffer: Buffer): void {
         const frameBuffer: Buffer  = Buffer.from([...this.unescape(buffer)]);
-        // try {
-        //     const frame = Frame.fromBuffer(frameBuffer);
-        //     if (frame) {
-        //         this.emit('parsed', frame);
-        //     }
-        // } catch (error) {
-        //     logger.debug(`<-- error ${error.stack}`, NS);
-        // }
+        const frameReader = new ZnspBuffalo(frameBuffer);
+        try {
+            const frame = frameReader.readZnspFrame();
+            if (frame) {
+                this.emit('frame', frame);
+            }
+        } catch (error) {
+            logger.debug(`<-- error ${error.stack}`, NS);
+        }
     }
 }

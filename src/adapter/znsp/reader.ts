@@ -1,7 +1,7 @@
 import {Transform, TransformCallback, TransformOptions} from "stream";
 import {END} from "./consts";
 
-export class UartReader extends Transform {
+export class SlipReader extends Transform {
     private buffer: Buffer;
 
     public constructor(opts?: TransformOptions) {

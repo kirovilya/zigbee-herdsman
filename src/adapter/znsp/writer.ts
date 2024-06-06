@@ -1,6 +1,6 @@
 import {Readable, ReadableOptions} from "stream";
 
-export class UartWriter extends Readable {
+export class SlipWriter extends Readable {
     private bytesToWrite: number[];
 
     constructor(opts?: ReadableOptions) {
