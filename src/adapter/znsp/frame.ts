@@ -1,24 +1,42 @@
 import {crc16} from "./utils";
 import Buffalo from "../../buffalo/buffalo";
+import { CommandId } from "./enums";
+import { FRAMES } from "./commands";
 
-export class ZnspBuffalo extends Buffalo {
-    public readZnspFrame(): ZnspFrame {
-        const flags = this.readUInt16();
-        const version = flags & 0x0F;
-        const type = (flags >> 4) & 0x0F;
-        const commandId = this.readUInt16();
-        const sequence = this.readUInt8();
-        const length = this.readUInt16();
-        const payload = Buffer.from(this.readBuffer(length));
 
-        return {
-            version,
-            type,
-            commandId,
-            sequence,
-            payload,
-        };
+function getFrameDesc(type: FrameType, key: CommandId) {
+    const frameDesc = FRAMES[key];
+    if (!frameDesc) throw new Error(`Unrecognized frame type from FrameID ${key}`);
+    switch (type) {
+        case FrameType.REQUEST:
+            return frameDesc['request'];
+        case FrameType.RESPONSE:
+            return frameDesc['response'];
+        case FrameType.INDICATION:
+            return frameDesc['indication'];
+        default:
+            return;
     }
+}
+
+export function readZnspFrame(buffer: Buffer): ZnspFrame {
+    const buf = new Buffalo(buffer);
+    const flags = buf.readUInt16();
+    const version = flags & 0x0F;
+    const type = (flags >> 4) & 0x0F;
+    const commandId = buf.readUInt16();
+    const sequence = buf.readUInt8();
+    const frameDesc = getFrameDesc(type, commandId);
+    const length = buf.readUInt16();
+    const payload = buf.readBuffer(length);
+
+    return {
+        version,
+        type,
+        commandId,
+        sequence,
+        payload,
+    };
 }
 
 export enum FrameType {
@@ -30,7 +48,7 @@ export enum FrameType {
 export type ZnspFrame = {
     version: number;
     type: FrameType;
-    commandId: number;
+    commandId: CommandId;
     sequence: number;
     payload?: Buffer;
 }

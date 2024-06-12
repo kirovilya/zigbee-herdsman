@@ -3,6 +3,7 @@ import {TsType} from "..";
 import {logger} from "../../utils/logger";
 import {ZnspSlip} from "./slip";
 import {ZnspFrame} from "./frame";
+import {ClusterId, EUI64, NodeId, ProfileId} from '../../zspec/tstypes';
 
 const NS = 'zh:znsp:driv';
 
@@ -10,9 +11,11 @@ const MAX_INIT_ATTEMPTS = 5;
 
 export class ZnspDriver extends EventEmitter {
     public readonly port: ZnspSlip;
+    public ieee: EUI64;
 
     constructor(options: TsType.SerialPortOptions) {
         super();
+        const ieee = '0xFFFFFFFFFFFFFFFF';
         this.port = new ZnspSlip(options);
         this.port.on('frame', this.onFrame.bind(this));
     }

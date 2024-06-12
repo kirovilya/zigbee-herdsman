@@ -8,7 +8,7 @@ import {logger} from "../../utils/logger";
 import {SlipWriter} from "./writer";
 import {SlipReader} from "./reader";
 import {ESCAPE, ESCEND, END, ESCESC} from "./consts";
-import {ZnspFrame, ZnspBuffalo} from "./frame";
+import {ZnspFrame, readZnspFrame} from "./frame";
 
 const NS = 'zh:znsp:uart';
 
@@ -36,7 +36,6 @@ export class ZnspSlip extends EventEmitter {
 
         logger.info(`NCP reset`, NS);
 
-        // ask ncp to reset itself using RST frame
         try {
             if (!this.portOpen) {
                 await this.openPort();
@@ -119,10 +118,10 @@ export class ZnspSlip extends EventEmitter {
             this.serialPort = new SerialPort(serialOpts);
 
             this.writer = new SlipWriter();
-            this.writer.pipe(this.socketPort);
+            this.writer.pipe(this.serialPort);
 
             this.reader = new SlipReader();
-            this.socketPort.pipe(this.reader);
+            this.serialPort.pipe(this.reader);
             this.reader.on('data', this.onFrame.bind(this));
             
             try {
@@ -235,9 +234,8 @@ export class ZnspSlip extends EventEmitter {
 
     private onFrame(buffer: Buffer): void {
         const frameBuffer: Buffer  = Buffer.from([...this.unescape(buffer)]);
-        const frameReader = new ZnspBuffalo(frameBuffer);
         try {
-            const frame = frameReader.readZnspFrame();
+            const frame = readZnspFrame(frameBuffer);
             if (frame) {
                 this.emit('frame', frame);
             }

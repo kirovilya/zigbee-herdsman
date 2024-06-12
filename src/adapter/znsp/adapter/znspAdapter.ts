@@ -2,10 +2,15 @@ import {existsSync, readFileSync} from 'fs';
 import path from 'path';
 import SerialPortUtils from '../../serialPortUtils';
 import SocketPortUtils from '../../socketPortUtils';
-import {BackupUtils, RealpathSync, Wait} from "../../../utils";
+import {BackupUtils, RealpathSync, Wait, Queue} from "../../../utils";
 import {Adapter, TsType} from "../..";
 import {Backup, UnifiedBackupStorage} from "../../../models";
 import * as Zcl from "../../../zspec/zcl";
+import {
+    NetworkOptions, SerialPortOptions, Coordinator, CoordinatorVersion, NodeDescriptor,
+    ActiveEndpoints, SimpleDescriptor, LQI, RoutingTable, NetworkParameters,
+    StartResult, LQINeighbor, RoutingTableEntry, AdapterOptions
+} from '../../tstype';
 import {
     DeviceAnnouncePayload,
     DeviceJoinedPayload,
@@ -20,11 +25,16 @@ import {logger} from "../../../utils/logger";
 const NS = 'zh:znsp';
 
 export class ZNSPAdapter extends Adapter {
+    private queue: Queue;
     private readonly driver: ZnspDriver;
 
     constructor(networkOptions: TsType.NetworkOptions, serialPortOptions: TsType.SerialPortOptions, backupPath: string,
         adapterOptions: TsType.AdapterOptions) {
         super(networkOptions, serialPortOptions, backupPath, adapterOptions);
+        const concurrent = adapterOptions && adapterOptions.concurrent ? adapterOptions.concurrent : 8;
+        logger.debug(`Adapter concurrent: ${concurrent}`, NS);
+        this.queue = new Queue(concurrent);
+        
         this.driver = new ZnspDriver(serialPortOptions);
     }
 
@@ -51,7 +61,44 @@ export class ZNSPAdapter extends Adapter {
     }
 
     public async getCoordinator(): Promise<TsType.Coordinator> {
-        return null;
+        return this.queue.execute<Coordinator>(async () => {
+            const networkAddress = 0x0000;
+            // 
+            // const message = await this.driver.zdoRequest(
+            //     networkAddress, EmberZDOCmd.Active_EP_req, EmberZDOCmd.Active_EP_rsp,
+            //     {dstaddr: networkAddress}
+            // );
+            // const activeEndpoints = message.activeeplist;
+
+            const endpoints = [];
+            endpoints.push({
+                profileID: 0,
+                ID: 0,
+                deviceID: 0,
+                inputClusters: [],
+                outputClusters: [],
+            });
+            // for (const endpoint of activeEndpoints) {
+                // const descriptor = await this.driver.zdoRequest(
+                //     networkAddress, EmberZDOCmd.Simple_Desc_req, EmberZDOCmd.Simple_Desc_rsp,
+                //     {dstaddr: networkAddress, targetEp: endpoint}
+                // );
+                // endpoints.push({
+                //     profileID: descriptor.descriptor.profileid,
+                //     ID: descriptor.descriptor.endpoint,
+                //     deviceID: descriptor.descriptor.deviceid,
+                //     inputClusters: descriptor.descriptor.inclusterlist,
+                //     outputClusters: descriptor.descriptor.outclusterlist,
+                // });
+            // }
+
+            return {
+                networkAddress: networkAddress,
+                manufacturerID: 0,
+                ieeeAddr: this.driver.ieee,
+                endpoints,
+            };
+        });
     }
 
     public async getCoordinatorVersion(): Promise<TsType.CoordinatorVersion> {
