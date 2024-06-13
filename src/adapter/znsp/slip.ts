@@ -233,7 +233,7 @@ export class ZnspSlip extends EventEmitter {
     }
 
     private onFrame(buffer: Buffer): void {
-        const frameBuffer: Buffer  = Buffer.from([...this.unescape(buffer)]);
+        const frameBuffer: Buffer = Buffer.from([...this.unescape(buffer)]);
         try {
             const frame = readZnspFrame(frameBuffer);
             if (frame) {
@@ -246,8 +246,8 @@ export class ZnspSlip extends EventEmitter {
 
     public sendFrame(frame: ZnspFrame): void {
         try {
-            const buf = writeZnspFrame(frame);
-            this.writer.push(buf);
+            const b = this.escape(writeZnspFrame(frame));
+            this.writer.push(b);
         } catch (error) {
             logger.debug(`--> error ${error.stack}`, NS);
         }
