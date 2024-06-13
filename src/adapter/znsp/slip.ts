@@ -8,7 +8,7 @@ import {logger} from "../../utils/logger";
 import {SlipWriter} from "./writer";
 import {SlipReader} from "./reader";
 import {ESCAPE, ESCEND, END, ESCESC} from "./consts";
-import {ZnspFrame, readZnspFrame} from "./frame";
+import {ZnspFrame, readZnspFrame, writeZnspFrame} from "./frame";
 
 const NS = 'zh:znsp:uart';
 
@@ -241,6 +241,15 @@ export class ZnspSlip extends EventEmitter {
             }
         } catch (error) {
             logger.debug(`<-- error ${error.stack}`, NS);
+        }
+    }
+
+    public sendFrame(frame: ZnspFrame): void {
+        try {
+            const buf = writeZnspFrame(frame);
+            this.writer.push(buf);
+        } catch (error) {
+            logger.debug(`--> error ${error.stack}`, NS);
         }
     }
 }
