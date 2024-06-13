@@ -2,19 +2,25 @@ import { CommandId, Status, NetworkState, DeviceType } from "./enums";
 import {BuffaloZclDataType, DataType, StructuredIndicatorType} from '../../zspec/zcl/definition/enums';
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-export interface ParamsDesc {[s: string]: any}
+// export interface ParamsDesc {[s: string]: any};
+export interface ParamsDesc {
+    name: string,
+    type: DataType,
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    condition?: (payload: any) => boolean,
+};
 
 interface ZNSPFrameDesc {
-    request: ParamsDesc,
-    response: ParamsDesc,
-    indication?: ParamsDesc,
+    request: ParamsDesc[],
+    response: ParamsDesc[],
+    indication?: ParamsDesc[],
 }
 
 export const FRAMES: {[key in CommandId]?: ZNSPFrameDesc} = {
     [CommandId.NETWORK_INIT]: {
         request: [],
         response: [
-            {name: 'status', type: Status},
+            {name: 'status', type: DataType.UINT8}, // Status
         ],
     },
     [CommandId.START]: {
@@ -22,13 +28,13 @@ export const FRAMES: {[key in CommandId]?: ZNSPFrameDesc} = {
             {name: 'autostart', type: DataType.BOOLEAN},
         ],
         response: [
-            {name: 'status', type: Status},
+            {name: 'status', type: DataType.UINT8}, // Status
         ],
     },
     [CommandId.NETWORK_STATE]: {
         request: [],
         response: [
-            {name: 'state', type: NetworkState},
+            {name: 'state', type: DataType.UINT8}, // NetworkState
         ],
     },
     [CommandId.STACK_STATUS_HANDLER]: {
@@ -42,15 +48,14 @@ export const FRAMES: {[key in CommandId]?: ZNSPFrameDesc} = {
     },
     [CommandId.FORM_NETWORK]: {
         request: [
-            {name: 'role', type: DeviceType},
+            {name: 'role', type: DataType.UINT8}, // DeviceType
             {name: 'install_code_policy', type: DataType.BOOLEAN},
-            {name: 'max_children', type: DataType.UINT8, conditions: [{attr: "role", value: DeviceType.COORDINATOR},
-                {attr: "role", value: DeviceType.ROUTER}]},
-            {name: 'ed_timeout', type: DataType.UINT8, conditions: [{attr: "role", value: DeviceType.ED}]},
-            {name: 'keep_alive', type: DataType.UINT32, conditions: [{attr: "role", value: DeviceType.ED}]},
+            {name: 'max_children', type: DataType.UINT8, condition: (payload) => [DeviceType.COORDINATOR, DeviceType.ROUTER].includes(payload.role)},
+            {name: 'ed_timeout', type: DataType.UINT8, condition: (payload) => payload.role == DeviceType.ED},
+            {name: 'keep_alive', type: DataType.UINT32, condition: (payload) => payload.role == DeviceType.ED},
         ],
         response: [
-            {name: 'status', type: Status},
+            {name: 'status', type: DataType.UINT8}, // Status
         ],
         indication: [
             {name: 'extended_panid', type: DataType.IEEE_ADDR},
@@ -63,7 +68,7 @@ export const FRAMES: {[key in CommandId]?: ZNSPFrameDesc} = {
             {name: 'duration', type: DataType.UINT8},
         ],
         response: [
-            {name: 'status', type: Status},
+            {name: 'status', type: DataType.UINT8}, // Status
         ],
         indication: [
             {name: 'duration', type: DataType.UINT8},
@@ -72,7 +77,7 @@ export const FRAMES: {[key in CommandId]?: ZNSPFrameDesc} = {
     [CommandId.LEAVE_NETWORK]: {
         request: [],
         response: [
-            {name: 'status', type: Status},
+            {name: 'status', type: DataType.UINT8}, // Status
         ],
         indication: [
             {name: 'short_addr', type: DataType.UINT16},

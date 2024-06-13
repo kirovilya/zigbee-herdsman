@@ -1,7 +1,9 @@
 import {crc16} from "./utils";
-import Buffalo from "../../buffalo/buffalo";
 import { CommandId } from "./enums";
 import { FRAMES } from "./commands";
+import {BuffaloZcl} from "../../zspec/zcl/buffaloZcl";
+import {BuffaloZclOptions} from '../../zspec/zcl/definition/tstype';
+import {DataType} from "../../zspec/zcl";
 
 
 function getFrameDesc(type: FrameType, key: CommandId) {
@@ -9,26 +11,26 @@ function getFrameDesc(type: FrameType, key: CommandId) {
     if (!frameDesc) throw new Error(`Unrecognized frame type from FrameID ${key}`);
     switch (type) {
         case FrameType.REQUEST:
-            return frameDesc['request'];
+            return frameDesc.request || [];
         case FrameType.RESPONSE:
-            return frameDesc['response'];
+            return frameDesc.response || [];
         case FrameType.INDICATION:
-            return frameDesc['indication'];
+            return frameDesc.indication || [];
         default:
             return;
     }
 }
 
 export function readZnspFrame(buffer: Buffer): ZnspFrame {
-    const buf = new Buffalo(buffer);
+    const buf = new BuffaloZcl(buffer);
     const flags = buf.readUInt16();
     const version = flags & 0x0F;
     const type = (flags >> 4) & 0x0F;
     const commandId = buf.readUInt16();
     const sequence = buf.readUInt8();
-    const frameDesc = getFrameDesc(type, commandId);
     const length = buf.readUInt16();
-    const payload = buf.readBuffer(length);
+    // const payload = buf.readBuffer(length);
+    const payload = readPayload(type, commandId, buf);
 
     return {
         version,
@@ -39,139 +41,67 @@ export function readZnspFrame(buffer: Buffer): ZnspFrame {
     };
 }
 
+
+export function writeZnspFrame(frame: ZnspFrame): Buffer {
+    const buf = new BuffaloZcl(Buffer.alloc(250));
+    const flags = frame.version & 0x0F + (frame.type << 4);
+    buf.writeInt16(flags);
+    buf.writeUInt16(frame.commandId);
+    buf.writeUInt8(frame.sequence);
+    const pos = buf.getPosition();
+    buf.writeUInt16(0);
+    const len = writePayload(frame.type, frame.commandId, frame.payload, buf);
+    buf.getBuffer().writeUInt16LE(len, pos);
+    return buf.getWritten();
+}
+
 export enum FrameType {
     REQUEST = 0,
     RESPONSE = 1,
     INDICATION = 2,
 }
 
-export type ZnspFrame = {
+export interface ZnspFrameData {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
+    [name: string]: any;
+}
+
+export interface ZnspFrame {
     version: number;
     type: FrameType;
     commandId: CommandId;
     sequence: number;
-    payload?: Buffer;
+    payload?: ZnspFrameData;
 }
 
-// export class ZnspFrame {
-//     public readonly version: number;
-//     public readonly type: FrameType;
-//     public readonly commandId: number;
-//     public readonly seq: number;
-//     public readonly payload: Buffer;
-//     public readonly buffer: Buffer;
+function readPayload(type: FrameType, commandId: CommandId,  buffalo: BuffaloZcl): ZnspFrameData {
+    const frameDesc = getFrameDesc(type, commandId);
+    const payload: ZnspFrameData = {};
 
-//     public constructor(buffer: Buffer) {
-//         this.buffer = buffer;
-//         const flags = this.buffer[0] + this.buffer[1] << 8;
-//         this.version = flags & 0x0F;
-//         this.type = (flags >> 4) & 0x0F;
-//         this.commandId = this.buffer[2] + this.buffer[3] << 8;
-//         this.seq = this.buffer[4];
-//         const len = this.buffer[5] + this.buffer[6] << 8;
-//         this.payload = this.buffer.subarray(7, -3);
-//     }
+    for (const parameter of frameDesc) {
+        const options: BuffaloZclOptions = {payload};
 
-//     public static fromBuffer(buffer: Buffer): ZnspFrame {
-//         return new ZnspFrame(buffer);
-//     }
+        if (parameter.condition && !parameter.condition(payload)) {
+            continue;
+        }
 
-//     /**
-//      * Throws on CRC error.
-//      */
-//     public checkCRC(): void {
-//         const crc = crc16(this.buffer.subarray(0, -3));
-//         const crcArr = Buffer.from([(crc >> 8), (crc % 256)]);
-//         const subArr = this.buffer.subarray(-3, -1);
+        payload[parameter.name] = buffalo.read(parameter.type as DataType, options);
+    }
 
-//         if (!subArr.equals(crcArr)) {
-//             throw new Error(`<-- CRC error: ${this.toString()}|${subArr.toString('hex')}|${crcArr.toString('hex')}`);
-//         }
-//     }
+    return payload;
+}
 
-//     /**
-//      * 
-//      * @returns Buffer to hex string
-//      */
-//     public toString(): string {
-//         return this.buffer.toString('hex');
-//     }
-// }
+function writePayload(type: FrameType, commandId: CommandId, payload: ZnspFrameData, buffalo: BuffaloZcl): number {
+    const frameDesc = getFrameDesc(type, commandId);
+    const start = buffalo.getPosition();
+    for (const parameter of frameDesc) {
+        const options: BuffaloZclOptions = {};
 
+        if (parameter.condition && !parameter.condition(payload)) {
+            continue;
+        }
 
-// export class ZnspFrameData {
-//     _cls_: string;
-//     _id_: number;
-//     _isRequest_: boolean;
-//     /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-//     [name: string]: any;
-
-//     static createFrame(
-//         ezspv: number, frame_id: number, isRequest: boolean, params: ParamsDesc | Buffer
-//     ): ZnspFrameData {
-//         const names = FRAME_NAMES_BY_ID[frame_id];
-//         if (!names) {
-//             throw new Error(`Unrecognized frame FrameID ${frame_id}`);
-//         }
-//         let frm: EZSPFrameData;
-//         names.every((frameName)=>{
-//             const frameDesc = EZSPFrameData.getFrame(frameName);
-//             if ((frameDesc.maxV && frameDesc.maxV < ezspv) || (frameDesc.minV && frameDesc.minV > ezspv)) {
-//                 return true;
-//             }
-//             try {
-//                 frm = new EZSPFrameData(frameName, isRequest, params);
-//             } catch (error) {
-//                 logger.error(`Frame ${frameName} parsing error: ${error.stack}`, NS);
-//                 return true;
-//             }
-//             return false;
-//         });
-//         return frm;
-//     }
-
-//     static getFrame(name: string): EZSPFrameDesc {
-//         const frameDesc = FRAMES[name];
-//         if (!frameDesc) throw new Error(`Unrecognized frame from FrameID ${name}`);
-//         return frameDesc;
-//     }
-
-//     constructor(key: string, isRequest: boolean, params: ParamsDesc | Buffer) {
-//         this._cls_ = key;
-//         this._id_ = FRAMES[this._cls_].ID;
-        
-//         this._isRequest_ = isRequest;
-//         const frame = EZSPFrameData.getFrame(key);
-//         const frameDesc = (this._isRequest_) ? frame.request || {} : frame.response || {};
-//         if (Buffer.isBuffer(params)) {
-//             let data = params;
-//             for (const prop of Object.getOwnPropertyNames(frameDesc)) {
-//                 [this[prop], data] = frameDesc[prop].deserialize(frameDesc[prop], data);
-//             }
-//         } else {
-//             for (const prop of Object.getOwnPropertyNames(frameDesc)) {
-//                 this[prop] = params[prop];
-//             }
-//         }
-//     }
-
-//     serialize(): Buffer {
-//         const frame = EZSPFrameData.getFrame(this._cls_);
-//         const frameDesc = (this._isRequest_) ? frame.request || {} : frame.response || {};
-//         const result = [];
-//         for (const prop of Object.getOwnPropertyNames(frameDesc)) {
-//             result.push(frameDesc[prop].serialize(frameDesc[prop], this[prop]));
-//         }
-//         return Buffer.concat(result);
-//     }
-
-//     get name(): string {
-//         return this._cls_;
-//     }
-
-//     get id(): number {
-//         return this._id_;
-//     }
-// }
-
-export default ZnspFrame;
+        buffalo.write(parameter.type as DataType, payload[parameter.name], options);
+    }
+    return buffalo.getPosition()-start;
+}
