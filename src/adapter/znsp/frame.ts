@@ -1,6 +1,7 @@
 import {crc16} from "./utils";
 import { CommandId } from "./enums";
 import { FRAMES } from "./commands";
+import {KeyValue} from "../../controller/tstype";
 import {BuffaloZcl} from "../../zspec/zcl/buffaloZcl";
 import {BuffaloZclOptions} from '../../zspec/zcl/definition/tstype';
 import {DataType} from "../../zspec/zcl";
@@ -61,10 +62,7 @@ export enum FrameType {
     INDICATION = 2,
 }
 
-export interface ZnspFrameData {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any*/
-    [name: string]: any;
-}
+export interface ZnspFrameData extends KeyValue {};
 
 export interface ZnspFrame {
     version: number;
@@ -74,7 +72,28 @@ export interface ZnspFrame {
     payload?: ZnspFrameData;
 }
 
-function readPayload(type: FrameType, commandId: CommandId,  buffalo: BuffaloZcl): ZnspFrameData {
+export function makeFrame(type: FrameType, commandId: CommandId, params: KeyValue): ZnspFrame {
+    const frameDesc = getFrameDesc(type, commandId);
+    const payload: ZnspFrameData = {};
+    for (const parameter of frameDesc) {
+        const options: BuffaloZclOptions = {payload};
+
+        if (parameter.condition && !parameter.condition(payload)) {
+            continue;
+        }
+
+        payload[parameter.name] = params[parameter.name];
+    }
+    return {
+        version: 0,
+        type: type,
+        commandId: commandId,
+        sequence: 0,
+        payload: payload,
+    }
+}
+
+function readPayload(type: FrameType, commandId: CommandId, buffalo: BuffaloZcl): ZnspFrameData {
     const frameDesc = getFrameDesc(type, commandId);
     const payload: ZnspFrameData = {};
 
